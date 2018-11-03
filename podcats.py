@@ -100,19 +100,26 @@ class Episode(object):
     def title(self):
         """Return episode title"""
         text = os.path.splitext(os.path.basename(self.filename))[0]
-        if self.id3 is not None:
-            val = self.id3.getall('TIT2')
-            if len(val) > 0:
-                text += str(val[0])
-            val = self.id3.getall('COMM')
-            if len(val) > 0:
-                text += ' ' + str(val[0])
+        # if self.id3 is not None:
+        #     val = self.id3.getall('TIT2')
+        #     if len(val) > 0:
+        #         text += str(val[0])
+        #     val = self.id3.getall('COMM')
+        #     if len(val) > 0:
+        #         text += ' ' + str(val[0])
+        # print('%s' % (cchardet.detect(text)['encoding'],))
         return text
 
     @property
     def date(self):
         """Return episode date as unix timestamp"""
         dt = self.get_tag('date')
+        
+        if 'Change' in self.filename:
+            track_number = re.search(r'- (\d{3})', self.filename).groups()[0]
+            fake_hours = track_number
+            dt = '2018-01-01:%s' % fake_hours
+        
         if dt:
             formats = [
                 '%Y-%m-%d:%H:%M:%S',
