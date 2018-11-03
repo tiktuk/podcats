@@ -81,7 +81,7 @@ class Episode(object):
     def as_xml(self):
         """Return episode item XML."""
         return EPISODE_TEMPLATE.format(
-            title=escape(self.title),
+            title=escape(self.title.decode('utf-8')),
             url=quoteattr(self.url),
             guid=escape(self.url),
             mimetype=self.mimetype,
