@@ -33,6 +33,7 @@ setup(
         'Flask>=0.9',
         'mutagen>=1.20',
         'humanize>=0.5.1',
+        'pytest>=7.4.4',
     ],
     classifiers=[
         'Development Status :: 5 - Production/Stable',
