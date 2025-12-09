@@ -1,6 +1,6 @@
 import os
 import pytest
-from podcats import Channel, Episode
+from podcats import Channel
 
 # The root directory for our test audio files
 TEST_AUDIO_ROOT = os.path.join(os.path.dirname(__file__), 'sample_audio')
