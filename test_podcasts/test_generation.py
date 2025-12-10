@@ -36,9 +36,8 @@ def test_episode_metadata_is_correct(test_channel):
         solaris_chapter_1 is not None
     ), "Could not find 'Solaris/01 - Chapter 1.mp3' in the episodes."
 
-    # The title logic from the source is: <filename_without_ext><ID3_Title_Tag>
-    # So, "01 - Chapter 1" + "Chapter 1"
-    expected_title = "01 - Chapter 1Chapter 1"
+    # The title logic now prefers ID3 tags: if TIT2 exists, use that
+    expected_title = "Chapter 1"
     assert (
         solaris_chapter_1.title == expected_title
     ), f"Expected title to be '{expected_title}', but got '{solaris_chapter_1.title}'."
@@ -87,10 +86,10 @@ def test_feed_generation_as_xml(test_channel):
     assert "<title>Test Audiobook Feed</title>" in xml_output
 
     # Check for item-level content for a few samples
-    assert "<title>01 - Chapter 1Chapter 1</title>" in xml_output  # Solaris
-    assert "<title>02 - Chapter 2Chapter 2</title>" in xml_output  # Roadside Picnic
+    assert "<title>Chapter 1</title>" in xml_output  # Solaris
+    assert "<title>Chapter 2</title>" in xml_output  # Roadside Picnic
     assert (
-        "<title>03 - Chapter 3Chapter 3</title>" in xml_output
+        "<title>Chapter 3</title>" in xml_output
     )  # Confessions of a Mask
 
     # Check that all 9 items are present
@@ -137,7 +136,7 @@ def test_feed_generation_as_html(test_channel):
     assert "<h1>Test Audiobook Feed</h1>" in html_string
 
     # Check for item-level content based on the actual HTML structure
-    assert ">01 - Chapter 1Chapter 1</a></h2>" in html_string
+    assert ">Chapter 1</a></h2>" in html_string
     assert "<p><strong>Directory:</strong> Solaris</p>" in html_string
     assert "<p><strong>Directory:</strong> Roadside Picnic</p>" in html_string
     assert "<p><strong>Directory:</strong> Confessions of a Mask</p>" in html_string

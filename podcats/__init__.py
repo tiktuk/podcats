@@ -147,16 +147,20 @@ class Episode(object):
 
     @property
     def title(self):
-        """Return episode title"""
-        text = os.path.splitext(os.path.basename(self.filename))[0]
+        """Return episode title - prefers ID3 tag, falls back to filename"""
+        # Try ID3 TIT2 tag first
         if self.id3 is not None:
             val = self.id3.getall('TIT2')
             if len(val) > 0:
-                text += str(val[0])
-            val = self.id3.getall('COMM')
-            if len(val) > 0:
-                text += ' ' + str(val[0])
-        return text
+                title = str(val[0])
+                # Optionally append comment if present
+                comm = self.id3.getall('COMM')
+                if len(comm) > 0:
+                    title += ' ' + str(comm[0])
+                return title
+        
+        # Fall back to filename without extension
+        return os.path.splitext(os.path.basename(self.filename))[0]
 
     @property
     def url(self):
