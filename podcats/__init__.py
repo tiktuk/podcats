@@ -668,7 +668,7 @@ parser.add_argument('--link', help='optional feed link')
 parser.add_argument(
     '--force-order-by-name',
     action="store_true",
-    help='Force ordering episodes by filename instead of by date. '
+    help='Force ordering episodes by filename instead of by date '
          'by creating an artificial timestamp based on the last '
          'number found in the filename.'
 )
