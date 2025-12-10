@@ -309,7 +309,7 @@ class Channel(object):
             items=u''.join(episode.as_xml() for episode in episodes)
         ).strip()
 
-    def as_html(self):
+    def as_html(self, index_url=None):
         """Return channel HTML with all episode items"""
         template = jinja2_env.get_template('feed.html')
         return template.render(
@@ -317,6 +317,7 @@ class Channel(object):
             description=self.description,
             link=escape(self.link),
             items=u''.join(episode.as_html() for episode in sorted(self)),
+            index_url=index_url,
         ).strip().encode("utf-8", "surrogateescape")
 
 
@@ -470,7 +471,7 @@ def serve_folder_feeds(folder_channel):
         channel = folder_channel.get_channel(folder_name)
         if channel is None:
             return Response('Folder not found', status=404)
-        return channel.as_html()
+        return channel.as_html(index_url=WEB_PATH)
 
     server.run(
         host=folder_channel.host,
