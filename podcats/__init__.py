@@ -16,7 +16,7 @@ import argparse
 import mimetypes
 from email.utils import formatdate
 from os import path
-from urllib.parse import quote
+from urllib.parse import quote, unquote
 from xml.sax.saxutils import escape, quoteattr
 
 import mutagen
@@ -43,13 +43,20 @@ jinja2_env = Environment(loader=FileSystemLoader(TEMPLATES_ROOT))
 logger = logging.getLogger(__name__)
 
 
+def is_audio_file(filepath):
+    """Check if a file is an audio file based on mimetype or extension."""
+    mimetype = mimetypes.guess_type(filepath)[0]
+    return (mimetype and 'audio' in mimetype) or filepath.endswith('m4b')
+
+
 class Episode(object):
     """Podcast episode"""
 
-    def __init__(self, filename, relative_dir, root_url, force_order_by_name=False):
+    def __init__(self, filename, relative_dir, root_url, title_mode='default', force_order_by_name=False):
         self.filename = filename
         self.relative_dir = relative_dir
         self.root_url = root_url
+        self.title_mode = title_mode  # 'default', 'id3', or 'filename'
         self.force_order_by_name = force_order_by_name
         self.length = os.path.getsize(filename)
 
@@ -132,28 +139,38 @@ class Episode(object):
         fn = os.path.basename(filepath)
         path_ = STATIC_PATH + '/' + self.relative_dir + '/' + fn
         path_ = re.sub(r'//', '/', path_)
-        
+
         # Ensure we don't get double slashes when joining root_url and path
         if self.root_url.endswith('/') and path_.startswith('/'):
             path_ = path_[1:]  # Remove leading slash from path if root_url ends with slash
-            
+
         url = self.root_url + quote(path_, errors="surrogateescape")
         return url
 
     @property
     def title(self):
-        """Return episode title
+        """Return episode title based on title_mode setting"""
+        filename_title = os.path.splitext(os.path.basename(self.filename))[0]
         
-        The title is constructed from:
-        1. The filename (without extension) as the base title
-        2. If ID3 tags are available:
-           - Appends the TIT2 tag (standard ID3 title tag) if present
-           - Appends the COMM tag (standard ID3 comment tag) if present
-           
-        This provides a fallback mechanism where the filename is always used,
-        and ID3 metadata enhances the title when available.
-        """
-        text = os.path.splitext(os.path.basename(self.filename))[0]
+        if self.title_mode == 'filename':
+            # Use only the filename, ignore ID3 tags
+            return filename_title
+        
+        if self.title_mode == 'id3':
+            # Prefer ID3 tag, fall back to filename
+            if self.id3 is not None:
+                val = self.id3.getall('TIT2')
+                if len(val) > 0:
+                    title = str(val[0])
+                    # Optionally append comment if present
+                    comm = self.id3.getall('COMM')
+                    if len(comm) > 0:
+                        title += ' ' + str(comm[0])
+                    return title
+            return filename_title
+        
+        # Default: concatenate filename + ID3 title + comment (original behavior)
+        text = filename_title
         if self.id3 is not None:
             val = self.id3.getall('TIT2')
             if len(val) > 0:
@@ -241,7 +258,7 @@ class Episode(object):
             return self._to_url(abs_path_image)
         else:
             return None
-            
+
     @property
     def duration(self):
         """Return episode duration in seconds"""
@@ -257,17 +274,17 @@ class Episode(object):
                 )
             )
             return None
-            
+
     @property
     def duration_formatted(self):
         """Return formatted duration as HH:MM:SS"""
         seconds = self.duration
         if seconds is None:
             return "Unknown"
-        
+
         hours, remainder = divmod(seconds, 3600)
         minutes, seconds = divmod(remainder, 60)
-        
+
         if hours > 0:
             return "{:02d}:{:02d}:{:02d}".format(hours, minutes, seconds)
         else:
@@ -277,39 +294,59 @@ class Episode(object):
 class Channel(object):
     """Podcast channel"""
 
-    def __init__(self, root_dir, root_url, host, port, title, link, debug=False, force_order_by_name=False):
+    def __init__(self, root_dir, root_url, host, port, title, link, debug=False, folder_path=None, title_mode='default', force_order_by_name=False):
         self.root_dir = root_dir or os.getcwd()
         self.root_url = root_url
         self.host = host
         self.port = int(port)
-        self.link = link or self.root_url + WEB_PATH
+        # Set link to specific RSS feed if folder_path is provided, otherwise to web interface
+        if folder_path:
+            self.link = link or self.root_url + "/feed/" + quote(folder_path, safe="")
+        else:
+            self.link = link or self.root_url
+        self.folder_path = folder_path  # Optional: restrict to specific subfolder
         self.title = title or os.path.basename(
             os.path.abspath(self.root_dir.rstrip('/')))
         self.description = 'Feed generated by <a href="%s">Podcats</a>.' % __url__
         self.debug = debug
+        self.title_mode = title_mode
         self.force_order_by_name = force_order_by_name
 
     def __iter__(self):
-        for root, _, files in os.walk(self.root_dir):
+        # If folder_path is specified, only walk that specific subfolder
+        if self.folder_path:
+            walk_dir = os.path.join(self.root_dir, self.folder_path)
+            if not os.path.exists(walk_dir):
+                return
+        else:
+            walk_dir = self.root_dir
+
+        for root, _, files in os.walk(walk_dir):
             relative_dir = root[len(self.root_dir):]
+
+            # If folder_path is set, only include files directly in that folder (not subfolders)
+            if self.folder_path:
+                # Check if we're in the target folder (not a subfolder of it)
+                if root != walk_dir:
+                    continue
+
             for fn in files:
                 filepath = os.path.join(root, fn)
-                mimetype = mimetypes.guess_type(filepath)[0]
-                if mimetype and 'audio' in mimetype or filepath.endswith('m4b'):
-                    yield Episode(filepath, relative_dir, self.root_url, self.force_order_by_name)
+                if is_audio_file(filepath):
+                    yield Episode(filepath, relative_dir, self.root_url, self.title_mode, self.force_order_by_name)
 
     def as_xml(self):
         """Return channel XML with all episode items"""
         template = jinja2_env.get_template('feed.xml')
-        
+
         # Get all episodes and sort them
         episodes = sorted(self)
-        
+
         # Get the first episode's image URL if available
         image_url = None
         if episodes:
             image_url = episodes[0].image
-        
+
         return template.render(
             title=escape(self.title),
             description=escape(self.description),
@@ -318,7 +355,7 @@ class Channel(object):
             items=u''.join(episode.as_xml() for episode in episodes)
         ).strip()
 
-    def as_html(self):
+    def as_html(self, index_url=None):
         """Return channel HTML with all episode items"""
         template = jinja2_env.get_template('feed.html')
         return template.render(
@@ -326,7 +363,112 @@ class Channel(object):
             description=self.description,
             link=escape(self.link),
             items=u''.join(episode.as_html() for episode in sorted(self)),
+            index_url=index_url,
         ).strip().encode("utf-8", "surrogateescape")
+
+
+class FolderChannel(object):
+    """Manages multiple podcast channels, one per subfolder"""
+
+    def __init__(
+        self,
+        root_dir,
+        root_url,
+        host,
+        port,
+        title,
+        link,
+        debug=False,
+        title_mode='default',
+    ):
+        self.root_dir = root_dir or os.getcwd()
+        self.root_url = root_url
+        self.host = host
+        self.port = int(port)
+        self.title = title
+        self.link = link
+        self.debug = debug
+        self.title_mode = title_mode
+        self._folders = None
+
+    def get_folders(self):
+        """Get list of immediate subfolders that contain audio files"""
+        if self._folders is not None:
+            return self._folders
+
+        folders = []
+        try:
+            for item in os.listdir(self.root_dir):
+                item_path = os.path.join(self.root_dir, item)
+                if os.path.isdir(item_path):
+                    # Check if folder contains audio files
+                    has_audio = False
+                    for fn in os.listdir(item_path):
+                        filepath = os.path.join(item_path, fn)
+                        if os.path.isfile(filepath) and is_audio_file(filepath):
+                            has_audio = True
+                            break
+                    if has_audio:
+                        folders.append(item)
+        except OSError:
+            pass
+
+        self._folders = sorted(folders)
+        return self._folders
+
+    def get_channel(self, folder_name):
+        """Get a Channel instance for a specific folder"""
+        if folder_name not in self.get_folders():
+            return None
+
+        folder_title = self.title or folder_name
+        return Channel(
+            root_dir=self.root_dir,
+            root_url=self.root_url,
+            host=self.host,
+            port=self.port,
+            title=folder_title,
+            link=self.link,
+            debug=self.debug,
+            folder_path=folder_name,
+            title_mode=self.title_mode,
+        )
+
+    def as_html_index(self):
+        """Return HTML index page listing all folder feeds"""
+        template = jinja2_env.get_template('folder_index.html')
+        folders = self.get_folders()
+
+        # Build folder info list
+        folder_info = []
+        for folder in folders:
+            channel = self.get_channel(folder)
+            episodes = list(channel)
+            image_url = None
+            if episodes:
+                # Sort episodes to get the first one consistently
+                sorted_episodes = sorted(episodes)
+                image_url = sorted_episodes[0].image
+            folder_info.append(
+                {
+                    'name': folder,
+                    'url': '/feed/' + quote(folder, safe=''),
+                    'web_url': '/web/' + quote(folder, safe=''),
+                    'rss_full_url': self.root_url + '/feed/' + quote(folder, safe=''),
+                    'episode_count': len(episodes),
+                    'image_url': image_url,
+                }
+            )
+
+        return (
+            template.render(
+                title=escape(self.title or 'Podcast Feeds'),
+                folders=folder_info,
+                root_url=self.root_url,
+            )
+            .strip()
+            .encode('utf-8', 'surrogateescape')
+        )
 
 
 def serve(channel):
@@ -349,41 +491,141 @@ def serve(channel):
     server.run(host=channel.host, port=channel.port, debug=channel.debug, threaded=True)
 
 
+def serve_folder_feeds(folder_channel):
+    """Serve multiple podcast feeds, one per subfolder"""
+    server = Flask(
+        __name__,
+        static_folder=folder_channel.root_dir,
+        static_url_path=STATIC_PATH,
+    )
+
+    # Root URL serves the index page
+    @server.route('/{web_path}'.format(web_path=WEB_PATH))
+    def index():
+        return folder_channel.as_html_index()
+
+    # RSS feed for a specific folder
+    @server.route('/feed/<path:folder_name>')
+    def folder_feed(folder_name):
+        folder_name = unquote(folder_name)
+        channel = folder_channel.get_channel(folder_name)
+        if channel is None:
+            return Response('Folder not found', status=404)
+        return Response(channel.as_xml(), content_type='application/xml; charset=utf-8')
+
+    # Web interface for a specific folder
+    @server.route('/{web_path}/<path:folder_name>'.format(web_path=WEB_PATH))
+    def folder_web(folder_name):
+        folder_name = unquote(folder_name)
+        channel = folder_channel.get_channel(folder_name)
+        if channel is None:
+            return Response('Folder not found', status=404)
+        return channel.as_html(index_url=WEB_PATH)
+
+    server.run(
+        host=folder_channel.host,
+        port=folder_channel.port,
+        debug=folder_channel.debug,
+        threaded=True,
+    )
+
+
 def main():
     """Main function"""
     args = parser.parse_args()
+    
+    # Validate mutually exclusive title options
+    if args.title_from_id3 and args.title_from_filename:
+        parser.error("--title-from-id3 and --title-from-filename are mutually exclusive")
+    
+    # Determine title mode
+    if args.title_from_id3:
+        title_mode = 'id3'
+    elif args.title_from_filename:
+        title_mode = 'filename'
+    else:
+        title_mode = 'default'
+    
     # Default server URL for binding and display
     url = 'http://' + args.host + ':' + args.port
 
     # Use public URL if provided, otherwise use server URL
     root_url = args.public_url if args.public_url else url
 
-    channel = Channel(
-        root_dir=path.abspath(args.directory),
-        root_url=root_url,  # Use the public URL for links if provided
-        host=args.host,     # Still use host/port for server binding
-        port=args.port,
-        title=args.title,
-        link=args.link,
-        debug=args.debug,
-        force_order_by_name=args.force_order_by_name,
-    )
-    if args.action == 'generate':
-        print(channel.as_xml())
-    elif args.action == 'generate_html':
-        print(channel.as_html())
+    if not args.folder_feeds:
+        # Original single-feed mode
+        channel = Channel(
+            root_dir=path.abspath(args.directory),
+            root_url=root_url,  # Use the public URL for links if provided
+            host=args.host,  # Still use host/port for server binding
+            port=args.port,
+            title=args.title,
+            link=args.link,
+            debug=args.debug,
+            title_mode=title_mode,
+            force_order_by_name=args.force_order_by_name,
+        )
+        if args.action == 'generate':
+            print(channel.as_xml())
+        elif args.action == 'generate_html':
+            print(channel.as_html())
+        else:
+            print('Welcome to the Podcats web server!')
+            print('\nListening on http://{}:{}'.format(args.host, args.port))
+
+            if args.public_url:
+                print('Using public URL: {}'.format(args.public_url))
+
+            print('\nYour podcast feed is available at:\n')
+            print('\t' + channel.root_url + '\n')
+            print('The web interface is available at\n')
+            print('\t{url}{web_path}\n'.format(url=root_url, web_path=WEB_PATH))
+            serve(channel)
     else:
-        print('Welcome to the Podcats web server!')
-        print('\nListening on http://{}:{}'.format(args.host, args.port))
+        # Handle folder-feeds mode
+        folder_channel = FolderChannel(
+            root_dir=path.abspath(args.directory),
+            root_url=root_url,
+            host=args.host,
+            port=args.port,
+            title=args.title,
+            link=args.link,
+            debug=args.debug,
+            title_mode=title_mode,
+        )
 
-        if args.public_url:
-            print('Using public URL: {}'.format(args.public_url))
+        if args.action == 'generate':
+            # Generate all feeds
+            folders = folder_channel.get_folders()
+            if not folders:
+                print('No subfolders with audio files found.')
+                return
+            for folder in folders:
+                print(f'# Feed for folder: {folder}')
+                print(f'# URL: /feed/{quote(folder, safe="")}')
+                channel = folder_channel.get_channel(folder)
+                print(channel.as_xml())
+                print('\n')
+        elif args.action == 'generate_html':
+            # Generate index page
+            print(folder_channel.as_html_index())
+        else:
+            # Serve mode
+            folders = folder_channel.get_folders()
+            print('Welcome to the Podcats web server (folder-feeds mode)!')
+            print('\nListening on http://{}:{}'.format(args.host, args.port))
 
-        print('\nYour podcast feed is available at:\n')
-        print('\t' + channel.root_url + '\n')
-        print('The web interface is available at\n')
-        print('\t{url}{web_path}\n'.format(url=root_url, web_path=WEB_PATH))
-        serve(channel)
+            if args.public_url:
+                print('Using public URL: {}'.format(args.public_url))
+
+            print('\nFound {} folder(s) with audio files:'.format(len(folders)))
+            for folder in folders:
+                print('  - {}'.format(folder))
+                print('    RSS: {}/feed/{}'.format(root_url, quote(folder, safe='')))
+                print('    Web: {}{}/{}'.format(root_url, WEB_PATH, quote(folder, safe='')))
+
+            print('\nIndex page available at: {}{}\n'.format(root_url, WEB_PATH))
+            serve_folder_feeds(folder_channel)
 
 
 parser = argparse.ArgumentParser(
@@ -427,8 +669,25 @@ parser.add_argument(
     '--force-order-by-name',
     action="store_true",
     help='Force ordering episodes by filename instead of by date. '
-         'by creating an artificial timestamp based on the last'
+         'by creating an artificial timestamp based on the last '
          'number found in the filename.'
+)
+parser.add_argument(
+    '--folder-feeds',
+    action='store_true',
+    help='Generate separate RSS feeds for each immediate subfolder '
+    'instead of one combined feed for all files',
+)
+parser.add_argument(
+    '--title-from-id3',
+    action='store_true',
+    help='Use ID3 tag for episode title instead of filename+tag concatenation. '
+         'Falls back to filename if no ID3 title tag exists.',
+)
+parser.add_argument(
+    '--title-from-filename',
+    action='store_true',
+    help='Use only the filename (without extension) for episode titles, ignoring ID3 tags.',
 )
 
 

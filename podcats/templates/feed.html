@@ -15,6 +15,7 @@
 </head>
     <body>
         <div class="container-fluid">
+            {% if index_url %}<p><a href="{{ index_url }}">&larr; Back to all feeds</a></p>{% endif %}
             <h1>{{ title }}</h1>
             <p>{{ description }}. RSS feed at <a href="{{ link }}">{{ link }}</a>.</p>
             <div class="row">
