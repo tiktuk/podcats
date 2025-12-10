@@ -131,11 +131,11 @@ class Episode(object):
         fn = os.path.basename(filepath)
         path_ = STATIC_PATH + '/' + self.relative_dir + '/' + fn
         path_ = re.sub(r'//', '/', path_)
-        
+
         # Ensure we don't get double slashes when joining root_url and path
         if self.root_url.endswith('/') and path_.startswith('/'):
             path_ = path_[1:]  # Remove leading slash from path if root_url ends with slash
-            
+
         url = self.root_url + quote(path_, errors="surrogateescape")
         return url
 
@@ -208,7 +208,7 @@ class Episode(object):
             return self._to_url(abs_path_image)
         else:
             return None
-            
+
     @property
     def duration(self):
         """Return episode duration in seconds"""
@@ -224,17 +224,17 @@ class Episode(object):
                 )
             )
             return None
-            
+
     @property
     def duration_formatted(self):
         """Return formatted duration as HH:MM:SS"""
         seconds = self.duration
         if seconds is None:
             return "Unknown"
-        
+
         hours, remainder = divmod(seconds, 3600)
         minutes, seconds = divmod(remainder, 60)
-        
+
         if hours > 0:
             return "{:02d}:{:02d}:{:02d}".format(hours, minutes, seconds)
         else:
@@ -267,15 +267,15 @@ class Channel(object):
     def as_xml(self):
         """Return channel XML with all episode items"""
         template = jinja2_env.get_template('feed.xml')
-        
+
         # Get all episodes and sort them
         episodes = sorted(self)
-        
+
         # Get the first episode's image URL if available
         image_url = None
         if episodes:
             image_url = episodes[0].image
-        
+
         return template.render(
             title=escape(self.title),
             description=escape(self.description),
