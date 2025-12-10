@@ -43,6 +43,12 @@ jinja2_env = Environment(loader=FileSystemLoader(TEMPLATES_ROOT))
 logger = logging.getLogger(__name__)
 
 
+def is_audio_file(filepath):
+    """Check if a file is an audio file based on mimetype or extension."""
+    mimetype = mimetypes.guess_type(filepath)[0]
+    return (mimetype and 'audio' in mimetype) or filepath.endswith('m4b')
+
+
 class Episode(object):
     """Podcast episode"""
 
@@ -280,8 +286,7 @@ class Channel(object):
 
             for fn in files:
                 filepath = os.path.join(root, fn)
-                mimetype = mimetypes.guess_type(filepath)[0]
-                if mimetype and 'audio' in mimetype or filepath.endswith('m4b'):
+                if is_audio_file(filepath):
                     yield Episode(filepath, relative_dir, self.root_url)
 
     def as_xml(self):
@@ -351,15 +356,9 @@ class FolderChannel(object):
                     has_audio = False
                     for fn in os.listdir(item_path):
                         filepath = os.path.join(item_path, fn)
-                        if os.path.isfile(filepath):
-                            mimetype = mimetypes.guess_type(filepath)[0]
-                            if (
-                                mimetype
-                                and 'audio' in mimetype
-                                or filepath.endswith('m4b')
-                            ):
-                                has_audio = True
-                                break
+                        if os.path.isfile(filepath) and is_audio_file(filepath):
+                            has_audio = True
+                            break
                     if has_audio:
                         folders.append(item)
         except OSError:
