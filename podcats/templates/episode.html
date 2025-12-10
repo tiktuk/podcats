@@ -1,8 +1,5 @@
 <article class="col-md-6 col-lg-4">
     <h2><a href="{{ url }}">{{ title }}</a></h2>
-    {% if image_url %}
-    <img class="book-cover" src="{{ image_url }}"/>
-    {% endif %}
     <div class="episode-description">
         {% include 'episode_description.html' %}
     </div>

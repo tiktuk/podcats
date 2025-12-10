@@ -45,12 +45,9 @@ def test_cover_image_in_html_output(test_channel):
 
     # Check that the cover image is included in the HTML
     assert (
-        '<img class="book-cover" src="' in html_output
+        '<img src="http://localhost:5000/static/Solaris/cover.jpg"' in html_output
     ), "HTML should include book cover image"
     assert "cover.jpg" in html_output, "HTML should include the cover image filename"
-    assert (
-        "http://localhost:5000/static/Solaris/cover.jpg" in html_output
-    ), "HTML should include full URL to cover image"
 
 
 def test_no_cover_image_for_book_without_cover():
