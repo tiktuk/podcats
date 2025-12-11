@@ -414,6 +414,7 @@ class FolderChannel(object):
         link,
         debug=False,
         title_mode='default',
+        force_order_by_name=False,
     ):
         self.root_dir = root_dir or os.getcwd()
         self.root_url = root_url
@@ -423,6 +424,7 @@ class FolderChannel(object):
         self.link = link
         self.debug = debug
         self.title_mode = title_mode
+        self.force_order_by_name = force_order_by_name
         self._folders = None
 
     def get_folders(self):
@@ -466,6 +468,7 @@ class FolderChannel(object):
             debug=self.debug,
             folder_path=folder_name,
             title_mode=self.title_mode,
+            force_order_by_name=self.force_order_by_name,
         )
 
     def as_html_index(self):
@@ -626,6 +629,7 @@ def main():
             link=args.link,
             debug=args.debug,
             title_mode=title_mode,
+            force_order_by_name=args.force_order_by_name,
         )
 
         if args.action == 'generate':
