@@ -49,6 +49,25 @@ def is_audio_file(filepath):
     return (mimetype and 'audio' in mimetype) or filepath.endswith('m4b')
 
 
+def natural_sort_key(text):
+    """
+    Generate a sort key for natural/alphanumeric sorting.
+    
+    This splits the text into chunks of digits and non-digits,
+    converting digit chunks to integers for proper numeric comparison.
+    Example: "Track 2" < "Track 10" (instead of "Track 10" < "Track 2")
+
+    >>> natural_sort_key("Track 10")
+    ['track ', 10, '']
+    >>> natural_sort_key("Track 2")
+    ['track ', 2, '']
+    """
+    def convert(chunk):
+        return int(chunk) if chunk.isdigit() else chunk.lower()
+    
+    return [convert(c) for c in re.split(r'(\d+)', text)]
+
+
 class Episode(object):
     """Podcast episode"""
 
@@ -74,14 +93,25 @@ class Episode(object):
             self.id3 = None
 
     def __lt__(self, other):
+        if self.force_order_by_name:
+            return natural_sort_key(os.path.basename(self.filename)) < natural_sort_key(os.path.basename(other.filename))
         return self.date < other.date
 
     def __gt__(self, other):
+        if self.force_order_by_name:
+            return natural_sort_key(os.path.basename(self.filename)) > natural_sort_key(os.path.basename(other.filename))
         return self.date > other.date
 
-    def __cmp__(self, other):
-        a, b = self.date, other.date
-        return (a > b) - (a < b)  # Python3 cmp() equivalent
+    def __eq__(self, other):
+        if self.force_order_by_name:
+            return natural_sort_key(os.path.basename(self.filename)) == natural_sort_key(os.path.basename(other.filename))
+        return self.date == other.date
+
+    def __le__(self, other):
+        return self < other or self == other
+
+    def __ge__(self, other):
+        return self > other or self == other
 
     def as_xml(self):
         """Return episode item XML"""
@@ -188,26 +218,30 @@ class Episode(object):
     @property
     def date(self):
         """Return episode date as unix timestamp"""
-        # If force_order_by_name is enabled, create artificial dates based on filename
+        # If force_order_by_name is enabled, create artificial dates based on natural sort order.
+        # This is needed because podcast players typically sort episodes by date, so we generate
+        # fake dates that follow the natural filename order to ensure proper episode sequencing.
         if self.force_order_by_name:
-            # Extract base filename without extension
             base_name = os.path.splitext(os.path.basename(self.filename))[0]
             
             # Create a base timestamp (Jan 1, 2020)
             base_timestamp = time.mktime(time.strptime("2020-01-01", "%Y-%m-%d"))
             
-            # Try to extract a number from the filename for ordering
+            # Extract the first number from the filename for day offset
+            # e.g., "001 - Title" → 1, "002 - Title" → 2
             numbers = re.findall(r'\d+', base_name)
             if numbers:
-                # Use the last number found as an offset (in seconds)
-                # This creates artificial timestamps that preserve the numerical order
-                offset = int(numbers[-1]) * 3600  # Convert to seconds (1 hour increments)
-                return base_timestamp + offset
+                # Use the first number as the day offset
+                day_offset = int(numbers[0])
             else:
-                # If no number in filename, use alphabetical ordering
-                # Convert filename to a number based on character values
-                name_value = sum(ord(c) for c in base_name)
-                return base_timestamp + name_value
+                # No numbers found - use sum of character values for alphabetical ordering
+                # This preserves relative order (earlier alphabet = smaller sum = earlier date)
+                day_offset = sum(ord(c) for c in base_name.lower())
+            
+            # Convert to seconds (1 day = 86400 seconds)
+            offset_seconds = day_offset * 86400
+            
+            return base_timestamp + offset_seconds
         
         # For regular podcast episodes, use the original logic
         dt = self.get_tag('date')
