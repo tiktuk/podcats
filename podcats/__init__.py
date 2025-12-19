@@ -36,7 +36,7 @@ __url__ = 'https://github.com/jakubroztocil/podcats'
 WEB_PATH = '/web'
 STATIC_PATH = '/static'
 TEMPLATES_ROOT = os.path.join(os.path.dirname(__file__), 'templates')
-BOOK_COVER_EXTENSIONS = ('.jpg', '.jpeg', '.png')
+BOOK_COVER_EXTENSIONS = ('.jpg', '.jpeg', '.png', '.gif')
 
 jinja2_env = Environment(loader=FileSystemLoader(TEMPLATES_ROOT))
 
